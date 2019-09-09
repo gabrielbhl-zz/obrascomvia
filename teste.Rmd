@@ -1,0 +1,195 @@
+---
+title: "Projeto P&D teste"
+output:
+  html_document:
+    df_print: paged
+---
+
+Setembro de 2019
+Leitura dos dados
+Para realizar a análise vou usar o sofware estatístico R. Inicialmente, precisamos carregar os pacotes que serão utilizados. A leitura e a limpeza dos dados é apresentada no código a seguir.
+
+```{r Bibliotecas usadas}
+library(tidyverse)
+library(lubridate)
+library(hrbrthemes)
+library(gcookbook)
+library(ggpubr)
+library(gridExtra)
+library(rpart)
+library(rpart.plot)
+############ Carregando o dado ############
+dados <- read.csv("C:/Users/Ivo/Downloads/obras_convias.csv", dec=",")
+dados$date_begin<- dmy_hm(dados$date_begin)
+dados$date_end  <- dmy_hm(dados$date_end)
+dados$duration<-difftime(dados$date_end,dados$date_begin,units="days") %>% 
+                as.numeric() %>% 
+                round(2)
+dados$company <- toupper(dados$company)
+dados$company<-ifelse(dados$company=="COMPANHIA DE GAS DE SÃO PAULO - COMGAS","COMGÁS - CIA. DE GÁS DE SÃO PAULO",dados$company)
+
+```
+
+
+
+
+Análise descritiva dos dados
+
+
+```{r Análises por companhia}
+dados %>% 
+group_by(company) %>% 
+summarise(n=n(),
+          Time_Avg=mean(duration),
+          Time_Sd=sd(duration)) %>% 
+arrange(n) %>%
+top_n(n = 5, wt = n) %>%
+mutate(Position = factor(company, company)) %>%
+ggplot(aes(x=Position, y=n)) +
+geom_col(fill="#619CFF")+
+geom_text(aes(label=scales::comma(n)), hjust=0, nudge_y=50)+
+scale_y_comma(limits=c(0,750))+
+coord_flip() +
+labs(x="Companhia", y=" Número de Serviços",
+       title="Número de Serviços por cada companhia") + 
+theme_ipsum(grid="X", axis="xy")+theme(axis.text.y = element_text(size = 10))
+
+
+```
+
+
+
+
+
+No gráfico anterior podemos ver como a maior parte dos serviços prestados ou solicitados são feitos pela companhia de saneamento básico SABESP e pela companhia de gás de São Paulo COMGAS, aproximadamente 83%. No próximo gráfico observamos a distribuição do tempo de duração para cada solicitação.
+
+```{r Duração da solicitação}
+dados %>% 
+filter(company%in%c("CENTURYLINK","TELEFONICA BRASIL S/A","MUNDIVOX COMUNICAÇÕES LTDA",
+                    "COMGÁS - CIA. DE GÁS DE SÃO PAULO","COMPANHIA DE SANEAMENTO BÁSICO DO ESTADO DE SP - SABESP") &
+           duration<200) %>% 
+mutate(index=case_when(company == "ASCENTY TELECOMUNICAÇÕES LTDA."  ~   7, 
+                       company == "OI MOVEL S.A"  ~   8, 
+                       company == "ELETROPAULO METROPOLITANA"  ~  11, 
+                       company == "CENTURYLINK"  ~  20, 
+                       company == "COMGÁS - CIA. DE GÁS DE SÃO PAULO"  ~  29, 
+                       company == "TELEFONICA BRASIL S/A"  ~  38, 
+                       company == "MUNDIVOX COMUNICAÇÕES LTDA"  ~  47, 
+                       company == "COMPANHIA DE GAS DE SÃO PAULO - COMGAS"  ~ 449, 
+                       company == "COMPANHIA DE SANEAMENTO BÁSICO DO ESTADO DE SP - SABESP"  ~ 597,
+                       TRUE~0
+                       )) %>%
+  ggplot(aes(x=fct_reorder(company,index), y=duration )) +
+  geom_boxplot(fill="#619CFF")+
+  coord_flip()+
+  labs(x="Companhia", y="Dias",
+       title="Distribuição do tempo de serviço por cada companhia",
+       caption="P&D project") + 
+  theme_ipsum(grid="X", axis="xy")
+```
+
+
+
+Com base no gráfico anterior podemos observar que tanto na SABESP quanto na COMGAS os tempos variam muito, além da presença de valores extremos. Isto pode ocorrer devido ao tipo de serviço que elas estão atendendo. Para entender um pouco mais, analisemos o comportamento dos tipos de serviços.
+
+
+Análises por Tipo de serviço.
+```{r}
+
+
+dados %>% 
+  group_by(type) %>% 
+  summarise(n=n(),
+            Time_Avg=mean(duration))%>% 
+  arrange(n) %>%
+  mutate(Position = factor(type, type))%>% 
+  ggplot(aes(x=Position, y=n )) +
+  geom_col(fill="#619CFF")+
+  geom_text(aes(label=scales::comma(n)), hjust=0, nudge_y=50)+
+  scale_y_comma(limits=c(0,750))+
+  coord_flip() +
+  labs(x="Companhia", y=" Número de Serviços",
+       title="Número de Serviços por tipo") + 
+  theme_ipsum(grid="X", axis="xy")
+```
+
+
+
+
+Notemos que aproximadamente 45% dos serviços são do tipo “Emergência”, seguido por “Obra Nova-Expansão Implantação” e “Obra Nova-Domiciliar sem Alvará” que juntas representam aproximadamente 48%. Isto poderia explicar a grande variabilidade na distribuição dos tempos de serviço de cada companhia. É provável que o tempo gasto para solucionar uma emergência seja menor que o tempo empregado para uma obra nova. A seguir veremos o comportamento desses tempos:
+
+
+```{r}
+dados %>%
+filter(duration<300) %>%
+mutate(index=case_when(type=="Obra Nova - Ligação Domiciliar com Alvará"~    12,
+                       type=="Manutenção - Corretiva"~    15,
+                       type=="Manutenção - Preventiva"~    56,
+                       type=="Obra Nova - Ligação Domiciliar sem Alvará"~   287,
+                       type=="Obra Nova - Expansão Implantação"~   316,
+                       type=="Emergência"~   570,
+                       TRUE~0)) %>% 
+ggplot(aes(x=reorder(type,index), y=duration )) +
+geom_boxplot(fill="#619CFF")+
+coord_flip()+
+labs(x="Companhia", y="Dias",
+     title="Distribuição do tempo de serviço por tipo",
+     caption="P&D project") + 
+  theme_ipsum(grid="X", axis="xy")
+```
+
+
+Pelo gráfico anterior podemos constatar o esperado: solicitações do tipo “Emergência” e “Obra Nova-Domiciliar sem Alvará” levam pouco tempo para serem resolvidas. Ao contrário, “Obra Nova-Expansão Implantação” apresenta maior variabilidade nos tempos de serviços o que terá impacto direto nas companhias que fazem esse tipo de serviço. Notemos que “Manutenção-Preventiva” parece ser também um tipo de serviço que leva mais de 100 dias, e como já comentamos, companhias que fazem esse tipo de serviço, demoraram mais. A seguir veremos como interage o tipo de serviço com cada companhia:
+
+
+Quando o serviço solicitado é “Emergência”, há indícios de haver uma relação com saneamento, já que a SABESP atende mais do 90% das solicitações. Da mesma forma, quando trata-se de “Obra Nova”, a COMGÁS atende a maior parte das solicitações. Isso explica os altos tempos apresentados por essas companhias nos primeiros gráficos (Distribuição do tempo de serviço por cada companhia). Para complementar nossa análise exploratória, chequemos como estão os dados com respeito ao “Status” de cada serviço.
+
+Análises por Status
+```{r}
+dados %>%
+  group_by(status) %>% 
+  summarise(n=n()) %>% 
+  arrange(n) %>%
+  mutate(Position = factor(status, status))%>% 
+  ggplot(aes(x=Position, y=n )) +
+  geom_col(fill="#619CFF")+
+  geom_text(aes(label=scales::comma(n)), hjust=0, nudge_y=40)+
+  scale_y_comma(limits=c(0,1000))+
+  coord_flip() +
+  labs(x="Status", y=" Número de Serviços",
+       title="Número de Serviços por Status") + 
+  theme_ipsum(grid="X", axis="xy")+theme(axis.text.y = element_text(size = 10))
+```
+
+
+
+Mais de 50% das solicitações correspondem ao status “Informada/Recebida”. Vejamos como são os tempos entre cada Status.
+
+```{r}
+dados %>%
+filter(duration<300) %>%
+mutate(index=case_when(  status=="Devolvida"~   118,
+                         status=="Informada"~   130,
+                         status=="Encerrada"~   142,
+                         status=="Informada/Recebida"~ 859,
+                         TRUE ~ 7)) %>%
+ggplot(aes(x=reorder(status,index), y=duration))+
+geom_boxplot(fill="#619CFF")+
+coord_flip()+
+  labs(x="Status", y="Dias",
+       title="Distribuição do tempo de serviço por Status")+
+  theme_ipsum(grid="X", axis="xy")+theme(axis.text.y = element_text(size = 10))
+```
+
+
+O comportamento dos tempos de serviço entre cada status parece normal, exceto por aquelas com status “Encerrada” que apresentaram alguns valores até de 100 dias. É importante uma investigação mais detalhada para entender o que acontece.
+
+Análise da Relação entre as variáveis
+Após a análise descritiva dos dados, é consequente uma análise inferencial. Esta pode ser feita por diferentes frentes, dado o objetivo. Neste caso, desejamos implementar um modelo de regressão que nos permita entender a relação entre o tempo de serviço e as demais variáveis e assim fazer previsões sobre esse tempo. Para avaliar a existência de correlação entre as variavéis e o tempo de serviço empregamos diferentes modelos, por exemplo, árvore de regressão, KNN ou regressão linear. Em princípio, ajustamos um modelo linear normal. A seguir apresentamos a Anova para esse modelo.
+
+Df	Sum Sq	Mean Sq	F value	Pr(>F)
+type	5	1931770.153	386354.0306	1541.797518	0.0000000
+status	4	3289.839	822.4598	3.282136	0.0109442
+company	24	14630.316	609.5965	2.432676	0.0001410
+Residuals	1215	304462.902	250.5868	NA	NA
+Para o modelo foram usadas as variavéis Status, type, Company e sub_prefecture. Apenas sub_prefecture apresentou uma correlação não significativa com respeito ao tempo de serviço. Em outras palavras, sub_prefecture não tem impacto sobre o tempo de serviço. Uma análise de diagnóstico é primordial para verificar o ajuste. Entretanto, esta não foi realizada aqui.
